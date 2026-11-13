@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test Jellyfin.Plugin.P2PShare.sln -c Release
+
+      - name: Package
+        id: package
+        run: |
+          VERSION=$(grep -E '^version:' build.yaml | sed -E 's/version: *"?([^"]*)"?/\1/')
+          ABI=$(grep -E '^targetAbi:' build.yaml | sed -E 's/targetAbi: *"?([^"]*)"?/\1/')
+          ZIP="p2pshare_${VERSION}.zip"
+          mkdir -p artifacts
+          cp src/Jellyfin.Plugin.P2PShare/bin/Release/net10.0/Jellyfin.Plugin.P2PShare.dll artifacts/
+          (cd artifacts && zip -q "../${ZIP}" Jellyfin.Plugin.P2PShare.dll)
+          MD5=$(md5sum "${ZIP}" | cut -d' ' -f1)
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${ZIP}"
+          cat > manifest-entry.json <<EOF
+          {
+            "version": "${VERSION}",
+            "changelog": "See release ${GITHUB_REF_NAME}",
+            "targetAbi": "${ABI}",
+            "sourceUrl": "${URL}",
+            "checksum": "${MD5}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          echo "zip=${ZIP}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Plugin manifest entry:"
+            echo
+            echo '```json'
+            cat manifest-entry.json
+            echo '```'
+          } > notes.md
+          gh release create "${GITHUB_REF_NAME}" "${{ steps.package.outputs.zip }}" manifest-entry.json \
+            --title "P2P Share ${GITHUB_REF_NAME}" --notes-file notes.md

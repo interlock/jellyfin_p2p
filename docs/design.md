@@ -1,6 +1,6 @@
 # P2P Share — Design Document
 
-Status: Draft v0.1 · Target: Jellyfin 12.0.x (.NET 10) · Plugin GUID `68f74e62-ee9d-4d89-b9e4-7e41baf0235d`
+Status: v0.1 (implemented) · Target: Jellyfin 12.0.x (.NET 10) · Plugin GUID `68f74e62-ee9d-4d89-b9e4-7e41baf0235d`
 
 ## 1. Goals
 
@@ -157,7 +157,7 @@ and the admin page shows a warning when it is off.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `LocalProxyBaseUrl` | `http://127.0.0.1:8096` | How this server's own ffmpeg reaches the proxy in `.strm` files |
+| `LocalProxyBaseUrl` | `http://127.0.0.1:8096` | Base of the proxy URL written in `.strm` files. Must be reachable by this server's ffmpeg and by any client that direct-plays the `.strm` URL itself (then use a LAN/public address) |
 | `SyncIntervalHours` | 6 | Default trigger of the sync scheduled task |
 | `DownloadArtwork` | true | Download posters/backdrops into mirror folders |
 | `LibraryNameTemplate` | `{library} ({server})` | Name of mirror libraries |
@@ -216,6 +216,7 @@ Enforcement:
   quota is already exhausted.
 * While streaming, every chunk is metered; when either quota is reached the stream is
   ended. A stream can therefore overshoot by at most one chunk.
+* Artwork downloads count against quotas but are not throttled.
 
 ### 5.7 Stream policy
 
@@ -259,6 +260,9 @@ proxy endpoint:
 ```
 http://127.0.0.1:8096/P2PShare/Proxy/{connectionId}/{remoteItemId}?key={proxyKey}
 ```
+
+Some Jellyfin clients open HTTP-backed (`.strm`) media sources directly instead of
+through the server, so `LocalProxyBaseUrl` is configurable (see §5.2).
 
 The proxy validates the per-connection `proxyKey` (random, rotated whenever the
 connection is re-created), adds the `X-P2PShare-Key` header and streams the response
