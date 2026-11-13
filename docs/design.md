@@ -72,7 +72,7 @@ src/Jellyfin.Plugin.P2PShare/
     Throttling/    Token buckets, bandwidth manager, throttled copy
     Quotas/        Quota windows, usage ledger and persistence
     Sharing/       Share authorization, stream policy, active stream registry, HTTP range parsing, ffmpeg args
-    Sync/          Remote DTOs, remote client, path planner, NFO writer, sync planner/executor
+    Sync/          Remote DTOs, remote client, mirror planner, NFO writer, mirror synchronizer
     Model/         Settings POCOs persisted in the plugin configuration
   Configuration/   PluginConfiguration + admin web page (HTML/JS, embedded)
   Api/             ASP.NET controllers: Remote (peer-facing), Proxy (local), Admin
@@ -276,9 +276,9 @@ Paths follow Jellyfin naming conventions so Jellyfin's own resolvers identify it
 
 | Remote type | Path |
 |---|---|
-| Movie | `Title (Year) [tmdbid-123]/Title (Year).strm` + `movie.nfo`, `poster.jpg`, `fanart.jpg` |
-| Series | `Series (Year)/tvshow.nfo`, `poster.jpg`, `fanart.jpg` |
-| Episode | `Series (Year)/Season 01/Series S01E02 - Name.strm` + `.nfo` + `-thumb.jpg` |
+| Movie | `Title (Year) [tmdbid-123]/Title (Year).strm` + `Title (Year).nfo`, `poster.jpg`, `fanart.jpg` |
+| Series | `Series (Year) [tvdbid-123]/tvshow.nfo`, `poster.jpg`, `fanart.jpg` |
+| Episode | `Series (Year) [tvdbid-123]/Season 01/Series S01E02 - Name.strm` + `.nfo` + `-thumb.jpg` |
 | Music video | `Artist - Title.strm` + `.nfo` |
 | Audio | `Album Artist/Album/01 - Title.strm`, `folder.jpg` |
 | Other video | `Title.strm` + `.nfo` |
@@ -289,16 +289,17 @@ File names are sanitized for all platforms. Two items that map to the same path 
 ### 6.4 Sync algorithm
 
 The `SyncRemoteLibrariesTask` scheduled task (default every 6 h, also "Sync now" in the
-UI) does, per enabled connection and library:
+UI) runs `RemoteSyncService` → `ConnectionSynchronizer`, which does, per enabled
+connection and library:
 
 1. `GET /Remote/Libraries` — refresh the list; new libraries are added (enabled by
    default), libraries no longer shared are disabled and their mirrors removed.
 2. Page through `GET /Remote/Libraries/{id}/Items` (500 per page).
-3. `PathPlanner` + `NfoWriter` build the **desired file set**: relative path → content
+3. `MirrorPlanner` + `NfoWriter` build the **desired file set**: relative path → content
    (or image reference) + fingerprint.
-4. `SyncPlanner` diffs desired files against the folder's manifest
+4. `MirrorSynchronizer.Diff` compares desired files against the folder's manifest
    (`.p2pshare-manifest.json`) → create/update/delete actions.
-5. `SyncExecutor` applies actions atomically per file (write temp + rename), downloads
+5. `MirrorSynchronizer.SyncAsync` applies actions atomically per file (write temp + rename), downloads
    artwork, deletes stale files and prunes empty directories. Only files listed in the
    manifest are ever deleted.
 6. `LibraryRegistrar` ensures a Jellyfin library exists for the mirror folder (with
@@ -326,12 +327,13 @@ served.
 
 ## 8. Admin UI
 
-A plugin configuration page (Dashboard → Plugins → P2P Share) with three tabs:
+A plugin configuration page (Dashboard → P2P Share, also under Plugins) with four tabs:
 
 * **Settings** — global settings (§5.1, §5.2).
 * **Outgoing shares** — create/edit/disable/rotate/delete shares, per-share usage, copy token.
 * **Incoming connections** — paste a token (previewed before saving), choose which
   libraries to mirror and their names, sync now, remove.
+* **Activity** — global usage for the current period and every running peer stream.
 
 It talks to `/P2PShare/Admin/*` endpoints (administrator only).
 
@@ -350,7 +352,7 @@ admin API and the sync task never overwrite each other.
 
 * Peer unreachable during sync → connection status set to the error, mirror left
   unchanged (no mass deletion on transient failure).
-* Peer returns 401/403 during sync → status "revoked/expired", mirror left unchanged
+* Peer returns 401/403 during sync → status "Access denied by peer: …", mirror left unchanged
   until the admin removes the connection.
 * Quota/concurrency refusal during playback → the peer's 429 is passed through; the
   Jellyfin client shows a playback error.
