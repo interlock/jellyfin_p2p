@@ -2,8 +2,8 @@
 name: "P2P Share"
 guid: "68f74e62-ee9d-4d89-b9e4-7e41baf0235d"
 version: "0.1.0.0"
-targetAbi: "10.11.0.0"
-framework: "net9.0"
+targetAbi: "12.0.0.0"
+framework: "net10.0"
 overview: "Share libraries between Jellyfin servers with invite tokens"
 description: >
   P2P Share lets a Jellyfin server operator share selected libraries with another

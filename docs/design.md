@@ -1,6 +1,6 @@
 # P2P Share — Design Document
 
-Status: Draft v0.1 · Target: Jellyfin 10.11.x (.NET 9) · Plugin GUID `68f74e62-ee9d-4d89-b9e4-7e41baf0235d`
+Status: Draft v0.1 · Target: Jellyfin 12.0.x (.NET 10) · Plugin GUID `68f74e62-ee9d-4d89-b9e4-7e41baf0235d`
 
 ## 1. Goals
 
@@ -370,4 +370,4 @@ admin API and the sync task never overwrite each other.
 * Relay/NAT traversal option.
 * Subtitle passthrough for external subtitle files.
 * Push notifications from sharer to receiver on library changes (instead of polling).
-* Jellyfin 12 (.NET 10) build target.
+* Optional Jellyfin 10.11 (.NET 9) back-port build.

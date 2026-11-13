@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          dotnet-version: 10.0.x
 
       - name: Restore
         run: dotnet restore Jellyfin.Plugin.P2PShare.sln
@@ -28,7 +28,7 @@ jobs:
       - name: Package plugin
         run: |
           mkdir -p artifacts
-          cp src/Jellyfin.Plugin.P2PShare/bin/Release/net9.0/Jellyfin.Plugin.P2PShare.dll artifacts/
+          cp src/Jellyfin.Plugin.P2PShare/bin/Release/net10.0/Jellyfin.Plugin.P2PShare.dll artifacts/
           cp build.yaml artifacts/
           (cd artifacts && zip -q ../p2pshare.zip *)
 

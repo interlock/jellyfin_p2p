@@ -16,7 +16,7 @@ appear as normal libraries on their server.
 
 ## Requirements
 
-* Jellyfin 10.11.x on both servers
+* Jellyfin 12.0.x on both servers
 * The sharing server must be reachable from the receiving server (HTTPS recommended)
 
 ## Build
@@ -26,7 +26,7 @@ dotnet build -c Release
 dotnet test
 ```
 
-The plugin DLL is at `src/Jellyfin.Plugin.P2PShare/bin/Release/net9.0/Jellyfin.Plugin.P2PShare.dll`.
+The plugin DLL is at `src/Jellyfin.Plugin.P2PShare/bin/Release/net10.0/Jellyfin.Plugin.P2PShare.dll`.
 Copy it into `<jellyfin data>/plugins/P2PShare_0.1.0.0/` and restart Jellyfin.
 
 ## License
