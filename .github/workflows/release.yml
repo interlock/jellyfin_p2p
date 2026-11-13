@@ -1,58 +1,156 @@
 name: Release
 
+# Publish a new plugin version:
+#   git tag v0.2.0 && git push origin v0.2.0
+# or run this workflow manually (Actions -> Release -> Run workflow).
+#
+# The workflow builds and tests the plugin, attaches p2p-share_<version>.zip to a GitHub
+# release, and adds the version to manifest.json on the default branch, which is the
+# Jellyfin plugin repository URL users add to their server.
+
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 0.2.0 (becomes tag v0.2.0 and plugin version 0.2.0.0)'
+        required: true
+      changelog:
+        description: 'Changelog shown in the Jellyfin catalog (optional)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Build and package only; do not publish a release or update manifest.json'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
-      - name: Test
-        run: dotnet test Jellyfin.Plugin.P2PShare.sln -c Release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-      - name: Package
-        id: package
+      - name: Install Python dependencies
+        run: pip install pyyaml
+
+      - name: Resolve version
+        id: meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CHANGELOG: ${{ inputs.changelog }}
         run: |
-          VERSION=$(grep -E '^version:' build.yaml | sed -E 's/version: *"?([^"]*)"?/\1/')
-          ABI=$(grep -E '^targetAbi:' build.yaml | sed -E 's/targetAbi: *"?([^"]*)"?/\1/')
-          ZIP="p2pshare_${VERSION}.zip"
-          mkdir -p artifacts
-          cp src/Jellyfin.Plugin.P2PShare/bin/Release/net10.0/Jellyfin.Plugin.P2PShare.dll artifacts/
-          (cd artifacts && zip -q "../${ZIP}" Jellyfin.Plugin.P2PShare.dll)
-          MD5=$(md5sum "${ZIP}" | cut -d' ' -f1)
-          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${ZIP}"
-          cat > manifest-entry.json <<EOF
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"
+            # Annotated tag message (if any) becomes the changelog.
+            CHANGELOG="$(git tag -l --format='%(contents)' "${TAG}" | sed '/-----BEGIN PGP SIGNATURE-----/,$d')"
+          else
+            TAG="v${INPUT_VERSION#v}"
+            CHANGELOG="${INPUT_CHANGELOG}"
+          fi
+          VERSION="$(python scripts/release.py version "${TAG}")"
+          if [ -z "$(echo "${CHANGELOG}" | tr -d '[:space:]')" ]; then
+            CHANGELOG="Release ${VERSION}. See https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           {
-            "version": "${VERSION}",
-            "changelog": "See release ${GITHUB_REF_NAME}",
-            "targetAbi": "${ABI}",
-            "sourceUrl": "${URL}",
-            "checksum": "${MD5}",
-            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
-          echo "zip=${ZIP}" >> "$GITHUB_OUTPUT"
+            echo "changelog<<CHANGELOG_EOF"
+            echo "${CHANGELOG}"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing ${TAG} as plugin version ${VERSION}"
 
-      - name: Create release
+      - name: Check release does not exist
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          {
-            echo "Plugin manifest entry:"
-            echo
-            echo '```json'
-            cat manifest-entry.json
-            echo '```'
-          } > notes.md
-          gh release create "${GITHUB_REF_NAME}" "${{ steps.package.outputs.zip }}" manifest-entry.json \
-            --title "P2P Share ${GITHUB_REF_NAME}" --notes-file notes.md
+          if gh release view "${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
+            echo "::error::Release ${{ steps.meta.outputs.tag }} already exists. Bump the version."
+            exit 1
+          fi
+
+      - name: Test release tooling
+        run: python -m unittest discover -s scripts -v
+
+      - name: Build
+        run: >
+          dotnet build Jellyfin.Plugin.P2PShare.sln -c Release
+          -p:Version=${{ steps.meta.outputs.version }}
+          -p:AssemblyVersion=${{ steps.meta.outputs.version }}
+          -p:FileVersion=${{ steps.meta.outputs.version }}
+
+      - name: Test
+        run: dotnet test Jellyfin.Plugin.P2PShare.sln -c Release --no-build
+
+      - name: Package
+        id: package
+        env:
+          CHANGELOG: ${{ steps.meta.outputs.changelog }}
+        run: |
+          python scripts/release.py package \
+            --version "${{ steps.meta.outputs.version }}" \
+            --changelog "${CHANGELOG}" \
+            --dll-dir src/Jellyfin.Plugin.P2PShare/bin/Release/net10.0 \
+            --out dist | tee package.txt
+          cat package.txt >> "$GITHUB_OUTPUT"
+
+      - name: Upload package (dry run)
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run
+          path: dist/
+
+      - name: Create GitHub release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGELOG: ${{ steps.meta.outputs.changelog }}
+        run: |
+          printf '%s\n\nInstall from the plugin repository:\n`https://raw.githubusercontent.com/%s/%s/manifest.json`\n\nMD5: `%s`\n' \
+            "${CHANGELOG}" "${GITHUB_REPOSITORY}" "${{ github.event.repository.default_branch }}" "${{ steps.package.outputs.checksum }}" > notes.md
+          gh release create "${{ steps.meta.outputs.tag }}" "${{ steps.package.outputs.zip }}" \
+            --target "${GITHUB_SHA}" \
+            --title "P2P Share ${{ steps.meta.outputs.version }}" \
+            --notes-file notes.md
+
+      - name: Update manifest.json on the default branch
+        if: ${{ !inputs.dry_run }}
+        env:
+          CHANGELOG: ${{ steps.meta.outputs.changelog }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          ZIP_NAME="$(basename "${{ steps.package.outputs.zip }}")"
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.meta.outputs.tag }}/${ZIP_NAME}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "${BRANCH}"
+          git checkout -B "${BRANCH}" "origin/${BRANCH}"
+          python scripts/release.py manifest \
+            --version "${{ steps.meta.outputs.version }}" \
+            --url "${URL}" \
+            --checksum "${{ steps.package.outputs.checksum }}" \
+            --timestamp "${{ steps.package.outputs.timestamp }}" \
+            --changelog "${CHANGELOG}"
+          git add manifest.json
+          git commit -m "Release ${{ steps.meta.outputs.version }}: update plugin manifest"
+          git push origin "${BRANCH}"

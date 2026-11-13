@@ -16,6 +16,15 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test release tooling
+        run: |
+          pip install pyyaml
+          python -m unittest discover -s scripts -v
+
       - name: Restore
         run: dotnet restore Jellyfin.Plugin.P2PShare.sln
 
@@ -26,16 +35,15 @@ jobs:
         run: dotnet test Jellyfin.Plugin.P2PShare.sln -c Release --no-build --logger "trx;LogFileName=results.trx" --results-directory TestResults
 
       - name: Package plugin
-        run: |
-          mkdir -p artifacts
-          cp src/Jellyfin.Plugin.P2PShare/bin/Release/net10.0/Jellyfin.Plugin.P2PShare.dll artifacts/
-          cp build.yaml artifacts/
-          (cd artifacts && zip -q ../p2pshare.zip *)
+        run: >
+          python scripts/release.py package --version 0.0.0.${{ github.run_number }}
+          --changelog "CI build ${{ github.sha }}"
+          --dll-dir src/Jellyfin.Plugin.P2PShare/bin/Release/net10.0 --out dist
 
       - uses: actions/upload-artifact@v4
         with:
           name: jellyfin-plugin-p2pshare
-          path: p2pshare.zip
+          path: dist/*.zip
 
       - uses: actions/upload-artifact@v4
         if: always()
