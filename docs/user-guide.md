@@ -7,15 +7,14 @@ In this guide **Alice** shares her libraries and **Bob** receives them.
 
 ## 1. Install the plugin
 
-Until the plugin is published in a repository:
+On **both** servers:
 
-1. Download `p2pshare.zip` from a GitHub release (or the CI artifact) and extract it.
-2. Copy `Jellyfin.Plugin.P2PShare.dll` into `<jellyfin data>/plugins/P2PShare_0.1.0.0/`.
-   * Docker: `/config/plugins/P2PShare_0.1.0.0/`
-   * Debian/Ubuntu: `/var/lib/jellyfin/plugins/P2PShare_0.1.0.0/`
-   * Windows: `%LOCALAPPDATA%\jellyfin\plugins\P2PShare_0.1.0.0\`
-3. Restart Jellyfin. **P2P Share** appears under Dashboard → Plugins and in the
-   dashboard menu.
+1. **Dashboard → Plugins → Manage Repositories** → add
+   `https://raw.githubusercontent.com/interlock/jellyfin_p2p/main/manifest.json`.
+2. **Dashboard → Plugins → Catalog** → **P2P Share** → **Install**, then restart Jellyfin.
+
+**P2P Share** then appears in the dashboard menu. For manual installation see the
+[README](../README.md#manual-installation).
 
 ## 2. Make the sharing server reachable (Alice)
 

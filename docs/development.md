@@ -32,9 +32,8 @@ dotnet test
 The Jellyfin packages version is set once in `Directory.Build.props`
 (`JellyfinVersion`, currently `12.0.*`) and the ABI in `build.yaml` (`targetAbi`).
 
-CI (`.github/workflows/ci.yml`) builds, runs the tests and uploads `p2pshare.zip` as an
-artifact on every push and pull request. Pushing a tag `v*` runs the release workflow,
-which attaches the zip to a GitHub release and produces a `manifest.json` entry.
+CI (`.github/workflows/ci.yml`) runs the release-tooling tests, builds, runs the .NET
+tests and uploads a plugin zip as an artifact on every push and pull request.
 
 ### What the tests cover
 
@@ -55,7 +54,7 @@ Use two Jellyfin 12 containers on one Docker network:
 docker network create p2p
 docker run -d --name alice --network p2p -p 8096:8096 -v $PWD/alice:/config -v /path/to/media:/media jellyfin/jellyfin:12.0
 docker run -d --name bob   --network p2p -p 8097:8096 -v $PWD/bob:/config jellyfin/jellyfin:12.0
-# copy the DLL into ./alice/plugins/P2PShare_0.1.0.0/ and ./bob/plugins/P2PShare_0.1.0.0/, restart both
+# install from the plugin repository, or extract a CI/release zip into ./alice/plugins/P2P Share_<version>/ and ./bob/plugins/..., restart both
 ```
 
 1. **Alice**: set Public server URL to `http://alice:8096`, create a share for a movie
@@ -77,10 +76,22 @@ docker run -d --name bob   --network p2p -p 8097:8096 -v $PWD/bob:/config jellyf
 
 ## Releasing
 
-1. Bump `version` and `changelog` in `build.yaml` and `<Version>` in `Directory.Build.props`.
-2. `git tag v0.1.0.0 && git push --tags`.
-3. The release workflow publishes `p2pshare_<version>.zip` and prints the manifest entry
-   (checksum, URL) for a plugin repository `manifest.json`.
+See [README → Releasing](../README.md#releasing-maintainers). In short: push a tag
+`vX.Y.Z` (annotated tag message = changelog) or run the *Release* workflow manually.
+The workflow tests, builds, publishes `p2p-share_X.Y.Z.0.zip` to a GitHub release and
+adds the version to `manifest.json` on `main`.
+
+Release tooling lives in `scripts/release.py` (tested by `scripts/test_release.py`):
+
+```bash
+python3 scripts/release.py version v0.2.0                       # -> 0.2.0.0
+python3 scripts/release.py package --version 0.2.0 --dll-dir <bin dir> --out dist
+python3 scripts/release.py manifest --version 0.2.0 --url <zip url> --checksum <md5>
+```
+
+When targeting a new Jellyfin major version, update `JellyfinVersion` in
+`Directory.Build.props`, `targetAbi`/`framework` in `build.yaml`, and the target
+framework in both `.csproj` files.
 
 ## Coding conventions
 
