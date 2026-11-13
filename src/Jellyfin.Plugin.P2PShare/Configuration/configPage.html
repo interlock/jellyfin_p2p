@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>P2P Share</title>
+</head>
+<body>
+<div id="P2PShareConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-select,emby-checkbox,emby-textarea"
+     data-controller="__plugin/P2PShareJs">
+    <style>
+        #P2PShareConfigPage .p2p-tabs { display: flex; gap: .5em; margin: 1em 0; flex-wrap: wrap; }
+        #P2PShareConfigPage .p2p-tabs button.active { background: #00a4dc; color: #fff; }
+        #P2PShareConfigPage .p2p-panel { display: none; }
+        #P2PShareConfigPage .p2p-panel.active { display: block; }
+        #P2PShareConfigPage .p2p-card { background: rgba(255,255,255,.05); border-radius: 6px; padding: 1em 1.2em; margin-bottom: 1em; }
+        #P2PShareConfigPage .p2p-card h3 { margin: 0 0 .4em 0; display: flex; justify-content: space-between; align-items: center; gap: .5em; }
+        #P2PShareConfigPage .p2p-muted { opacity: .7; font-size: .9em; }
+        #P2PShareConfigPage .p2p-warn { color: #ffb74d; }
+        #P2PShareConfigPage .p2p-error { color: #ef5350; }
+        #P2PShareConfigPage .p2p-ok { color: #66bb6a; }
+        #P2PShareConfigPage .p2p-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0 1.5em; }
+        #P2PShareConfigPage .p2p-bar { height: 6px; background: rgba(255,255,255,.15); border-radius: 3px; overflow: hidden; margin: .3em 0; }
+        #P2PShareConfigPage .p2p-bar > div { height: 100%; background: #00a4dc; }
+        #P2PShareConfigPage .p2p-token { font-family: monospace; word-break: break-all; background: rgba(0,0,0,.35); padding: .8em; border-radius: 4px; user-select: all; }
+        #P2PShareConfigPage .p2p-actions { display: flex; gap: .5em; flex-wrap: wrap; margin-top: .6em; }
+        #P2PShareConfigPage .p2p-actions .raised { margin: 0; }
+        #P2PShareConfigPage table { width: 100%; border-collapse: collapse; }
+        #P2PShareConfigPage td, #P2PShareConfigPage th { text-align: left; padding: .35em .5em; border-bottom: 1px solid rgba(255,255,255,.1); }
+        #P2PShareConfigPage .hide { display: none !important; }
+    </style>
+
+    <div data-role="content">
+        <div class="content-primary">
+            <h2 class="sectionTitle">P2P Share</h2>
+            <p class="p2p-muted">Share libraries with other Jellyfin servers running P2P Share, and mount libraries they share with you.</p>
+
+            <div class="p2p-tabs">
+                <button is="emby-button" type="button" class="raised p2p-tab active" data-tab="shares">Outgoing shares</button>
+                <button is="emby-button" type="button" class="raised p2p-tab" data-tab="connections">Incoming connections</button>
+                <button is="emby-button" type="button" class="raised p2p-tab" data-tab="activity">Activity</button>
+                <button is="emby-button" type="button" class="raised p2p-tab" data-tab="settings">Settings</button>
+            </div>
+
+            <!-- Outgoing shares -->
+            <div class="p2p-panel active" data-panel="shares">
+                <div id="p2pPublicUrlWarning" class="p2p-card p2p-warn hide">
+                    Set the <b>public server URL</b> in Settings before creating shares; it is embedded in every invite token.
+                </div>
+                <div id="p2pNewToken" class="p2p-card hide">
+                    <h3>Invite token <span class="p2p-muted">shown only once</span></h3>
+                    <p>Send this to the other server's administrator. Anyone with it can use the share, so send it privately.</p>
+                    <div class="p2p-token" id="p2pNewTokenValue"></div>
+                    <div class="p2p-actions">
+                        <button is="emby-button" type="button" class="raised" id="p2pCopyToken">Copy</button>
+                        <button is="emby-button" type="button" class="raised" id="p2pDismissToken">Done</button>
+                    </div>
+                </div>
+                <button is="emby-button" type="button" class="raised button-submit" id="p2pAddShare">
+                    <span>New share</span>
+                </button>
+                <form id="p2pShareForm" class="p2p-card hide">
+                    <h3 id="p2pShareFormTitle">New share</h3>
+                    <input type="hidden" id="p2pShareId">
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" id="p2pShareName" label="Name (who is this for?)" required maxlength="100">
+                    </div>
+                    <div class="verticalSection">
+                        <h4>Libraries</h4>
+                        <div id="p2pShareLibraries"></div>
+                    </div>
+                    <div class="p2p-grid">
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="p2pShareEnabled" checked><span>Enabled</span></label></div>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="p2pShareTranscode"><span>Allow transcoding</span></label></div>
+                        <div class="inputContainer"><input is="emby-input" type="number" min="0" step="0.1" id="p2pShareMaxBitrate" label="Max streaming bitrate (Mbps, 0 = no cap)"></div>
+                        <div class="inputContainer"><input is="emby-input" type="number" min="0" step="0.1" id="p2pShareBandwidth" label="Max bandwidth (Mbps, 0 = unlimited)"></div>
+                        <div class="inputContainer"><input is="emby-input" type="number" min="0" step="0.1" id="p2pShareQuota" label="Data quota (GB, 0 = unlimited)"></div>
+                        <div class="selectContainer">
+                            <select is="emby-select" id="p2pShareQuotaInterval" label="Quota period">
+                                <option value="Hourly">Hourly</option>
+                                <option value="Daily">Daily</option>
+                                <option value="Weekly">Weekly</option>
+                                <option value="Monthly" selected>Monthly</option>
+                            </select>
+                        </div>
+                        <div class="inputContainer"><input is="emby-input" type="number" min="0" step="1" id="p2pShareStreams" label="Max concurrent streams (0 = unlimited)"></div>
+                        <div class="inputContainer"><input is="emby-input" type="date" id="p2pShareExpires" label="Expires (optional)"></div>
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" id="p2pShareNetworks" label="Allowed IPs / CIDR ranges (comma separated, empty = any)">
+                    </div>
+                    <div class="inputContainer">
+                        <textarea is="emby-textarea" id="p2pShareNotes" label="Notes" rows="2"></textarea>
+                    </div>
+                    <div class="p2p-error" id="p2pShareErrors"></div>
+                    <div class="p2p-actions">
+                        <button is="emby-button" type="submit" class="raised button-submit"><span>Save</span></button>
+                        <button is="emby-button" type="button" class="raised" id="p2pShareCancel"><span>Cancel</span></button>
+                    </div>
+                </form>
+                <div id="p2pShareList" style="margin-top:1em"></div>
+            </div>
+
+            <!-- Incoming connections -->
+            <div class="p2p-panel" data-panel="connections">
+                <form id="p2pConnectForm" class="p2p-card">
+                    <h3>Add a share from another server</h3>
+                    <div class="inputContainer">
+                        <textarea is="emby-textarea" id="p2pConnectToken" label="Invite token" rows="3" required></textarea>
+                    </div>
+                    <div id="p2pConnectPreview" class="hide"></div>
+                    <div class="p2p-error" id="p2pConnectErrors"></div>
+                    <div class="p2p-actions">
+                        <button is="emby-button" type="button" class="raised" id="p2pConnectPreviewBtn"><span>Check token</span></button>
+                        <button is="emby-button" type="submit" class="raised button-submit"><span>Add</span></button>
+                    </div>
+                </form>
+                <div id="p2pConnectionList"></div>
+            </div>
+
+            <!-- Activity -->
+            <div class="p2p-panel" data-panel="activity">
+                <div class="p2p-card">
+                    <h3>Global usage</h3>
+                    <div id="p2pGlobalUsage"></div>
+                </div>
+                <div class="p2p-card">
+                    <h3>Active peer streams <button is="emby-button" type="button" class="raised" id="p2pRefreshActivity"><span>Refresh</span></button></h3>
+                    <div id="p2pActiveStreams"></div>
+                </div>
+            </div>
+
+            <!-- Settings -->
+            <div class="p2p-panel" data-panel="settings">
+                <form id="p2pSettingsForm">
+                    <div class="p2p-card">
+                        <h3>Sharing (this server shares with others)</h3>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="p2pSharingEnabled"><span>Answer requests from peers</span></label></div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="url" id="p2pPublicUrl" label="Public server URL">
+                            <div class="fieldDescription">The address other servers use to reach this one, e.g. https://media.example.com. <a href="#" id="p2pUseSuggestedUrl">Use this page's address</a></div>
+                        </div>
+                        <div class="inputContainer"><input is="emby-input" type="text" id="p2pDisplayName" label="Name shown to peers (empty = server name)"></div>
+                        <div class="checkboxContainer">
+                            <label><input is="emby-checkbox" type="checkbox" id="p2pRequireHttps"><span>Require HTTPS for tokens and peers</span></label>
+                            <div class="fieldDescription p2p-warn" id="p2pHttpsWarning">Invite tokens are credentials. Without HTTPS they travel in clear text.</div>
+                        </div>
+                        <div class="p2p-grid">
+                            <div class="inputContainer"><input is="emby-input" type="number" min="0" step="0.1" id="p2pGlobalBandwidth" label="Total bandwidth to peers (Mbps, 0 = unlimited)"></div>
+                            <div class="inputContainer"><input is="emby-input" type="number" min="0" step="0.1" id="p2pGlobalQuota" label="Total data to peers (GB, 0 = unlimited)"></div>
+                            <div class="selectContainer">
+                                <select is="emby-select" id="p2pGlobalQuotaInterval" label="Total data period">
+                                    <option value="Hourly">Hourly</option>
+                                    <option value="Daily">Daily</option>
+                                    <option value="Weekly">Weekly</option>
+                                    <option value="Monthly">Monthly</option>
+                                </select>
+                            </div>
+                            <div class="inputContainer"><input is="emby-input" type="number" min="0" step="1" id="p2pGlobalStreams" label="Max concurrent peer streams (0 = unlimited)"></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="p2pAllowTranscoding"><span>Allow transcoding for peers</span></label></div>
+                            <div class="inputContainer"><input is="emby-input" type="number" min="0" step="1" id="p2pMaxTranscodes" label="Max concurrent peer transcodes (0 = unlimited)"></div>
+                            <div class="inputContainer"><input is="emby-input" type="number" min="0" step="1" id="p2pDefaultLifetime" label="Default share lifetime (days, 0 = never expires)"></div>
+                        </div>
+                    </div>
+                    <div class="p2p-card">
+                        <h3>Receiving (other servers share with this one)</h3>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="url" id="p2pLocalProxyUrl" label="Local proxy base URL">
+                            <div class="fieldDescription">Written into .strm files. Must be reachable by this server's own ffmpeg and by clients that direct play, e.g. http://127.0.0.1:8096 or your LAN address.</div>
+                        </div>
+                        <div class="p2p-grid">
+                            <div class="inputContainer"><input is="emby-input" type="number" min="1" max="168" step="1" id="p2pSyncHours" label="Sync interval (hours)"></div>
+                            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="p2pDownloadArtwork"><span>Download artwork</span></label></div>
+                        </div>
+                        <div class="inputContainer"><input is="emby-input" type="text" id="p2pNameTemplate" label="Library name template ({library}, {server})"></div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="p2pMirrorRoot" label="Mirror folder (empty = plugin data folder)">
+                            <div class="fieldDescription" id="p2pMirrorRootHint"></div>
+                        </div>
+                    </div>
+                    <div class="p2p-error" id="p2pSettingsErrors"></div>
+                    <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
